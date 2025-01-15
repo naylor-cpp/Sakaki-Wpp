@@ -14,7 +14,7 @@ class Sock {
 } // Main
 
     private async connection () { 
-       sock.ev.on('connection.update', (update) => {
+      this.sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update
         if(connection === 'close') {
             const shouldReconnect = (lastDisconnect.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut
@@ -31,7 +31,7 @@ class Sock {
 
 
 public async Messages () {   
-    sock.ev.on('messages.upsert', m => {
+   this.sock.ev.on('messages.upsert', m => {
         console.log(JSON.stringify(m, undefined, 2))
 
         console.log('replying to', m.messages[0].key.remoteJid)
