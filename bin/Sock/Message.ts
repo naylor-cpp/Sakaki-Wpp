@@ -18,10 +18,24 @@ class Message extends Sock {
 
 
 
-	public async sendMessage(msg: AnyMessageContent, jid: string) {
+	public async sendText(jid: string, text: any) {
 		await this.Typing(jid);
-		await this.sock.sendMessage(jid, msg)
+		await this.sock.sendMessage(jid, { text: text })
+	}
+
+	public async sendTextQuoted(jid: string, text: any, message: any) {
+		await this.Typing(jid);
+		await this.sock.sendMessage(
+			jid,
+			{ text: text },
+			{ quoted: message }
+		)
 	}
 
 
-} module.exports = Message;
+	public async sendSticker(jid:string) {
+		await this.Typing(jid);
+		await this.sendSticker
+	}
+
+} export default Message;

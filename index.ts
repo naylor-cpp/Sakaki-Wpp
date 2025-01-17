@@ -1,6 +1,7 @@
 import { Boom } from '@hapi/boom'
 import NodeCache from 'node-cache'
 import readline from 'readline'
+import sharp from 'sharp';
 import makeWASocket, {
 	BinaryInfo,
 	DisconnectReason, downloadMediaMessage, encodeWAM, fetchLatestBaileysVersion, getAggregateVotesInPollMessage, makeCacheableSignalKeyStore,
@@ -8,7 +9,7 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import fs, { writeFile } from 'fs'
 import P from 'pino'
-import { buffer } from 'stream/consumers';
+import Message from './bin/Sock/Message';
 
 const logger = P({ timestamp: () => `,"time":"${new Date().toJSON()}"` }, P.destination('./wa-logs.txt'))
 logger.level = 'trace'
@@ -41,15 +42,11 @@ setInterval(() => {
 class Sock {
 
 	public sock: any;
-	public state: any;
-	public saveCreds: any;
 	public messages: any;
-	public messageType: any;
 
 	public async Main() {
 		try {
 			const { state, saveCreds } = await useMultiFileAuthState('src/connect/baileys_auth_info');
-			this.saveCreds = state;
 			const { version, isLatest } = await fetchLatestBaileysVersion();
 			console.log(`using WA v${version.join('.')}, isLatest: ${isLatest}`);
 
@@ -81,7 +78,7 @@ class Sock {
 				console.log(`Pairing code: ${code}`)
 			}
 
-			await this.Connection();
+			await this.Connection(saveCreds);
 
 
 		} catch {
@@ -104,8 +101,8 @@ class Sock {
 
 
 
-	private async Connection() {
-		this.sock.ev.on('connection.update', async (update:any) => {
+	private async Connection(saveCreds: any) {
+		this.sock.ev.on('connection.update', async (update: any) => {
 			const { connection, lastDisconnect } = update
 			if (connection === 'close') {
 				// reconnect if not logged out
@@ -150,8 +147,8 @@ class Sock {
 		});
 
 		// credentials updated -- save them
-		this.sock.ev.on('creds.update', async (update:any) => {
-			await this.saveCreds();
+		this.sock.ev.on('creds.update', async (update: any) => {
+			await saveCreds();
 
 		});
 
@@ -159,11 +156,15 @@ class Sock {
 	}
 
 	private async Messages() {
-		this.sock.ev.on('messages.upsert', async (upsert:any) => {
-			this.messages = upsert.messages[0];
-			const text = this.messages.message?.conversation || this.messages.message?.extendedTextMessage?.text
-			console.log(this.messageType);
-			this.Sticker();
+		this.sock.ev.on('messages.upsert', async ({ messages }: any) => {
+			this.messages = messages[0];
+			const text = this.messages.message?.conversation || this.messages.message?.extendedTextMessage?.text;
+
+			if (!this.messages.message) return // if there is no text or media message
+			const messageType = Object.keys(this.messages.message)[0]// get what type of message it is -- text, image, video
+
+
+			this.Sticker(messageType);
 
 
 			console.log(JSON.stringify(this.messages, undefined, 2))
@@ -191,46 +192,87 @@ class Sock {
 			}
 		})
 
-		this.sock.ev.on('message-receipt.update', async (update:any) => {
+		this.sock.ev.on('message-receipt.update', async (update: any) => {
 			console.log(update);
 		})
 
-		this.sock.ev.on('messages.reaction', async (update:any) => {
+		this.sock.ev.on('messages.reaction', async (update: any) => {
 			console.log(update);
 		})
 
 	}
 
 
-	private async void() {
-		if (!this.messages.message) return // if there is no text or media message
-		this.messageType = Object.keys(this.messages.message)[0]// get what type of message it is -- text, image, video
+	private async Sticker(Type: any) {
 
-	}
-
-	private async Sticker() {
-		// if the message is an image
-		if (this.messageType === 'imageMessage') {
-			// download the message
-			await this.MediaDownload();
-		}
-
-	}
-
-	private async MediaDownload() {
-		const buffer = await downloadMediaMessage(
-			this.messages,
-			'buffer',
-			{},
-			{
-				logger,
-				// pass this so that baileys can request a reupload of media
-				// that has been deleted
-				reuploadRequest: this.sock.updateMediaMessage
+		const Img: any = async () => {
+			// if the message is an image
+			if (Type === 'imageMessage') {
+				const caption = this.messages.message.imageMessage.caption;
+				if (caption.toLowerCase() === '#sticker') {
+					const buffer = await downloadMediaMessage(
+						this.messages,
+						'buffer',
+						{},
+						{
+							logger,
+							// pass this so that baileys can request a reupload of media
+							// that has been deleted
+							reuploadRequest: this.sock.updateMediaMessage
+						}
+					)
+					const stickerBuffer = await sharp(buffer)
+						.resize(512, 512, {
+							fit: 'inside',
+							background: { r: 0, g: 0, b: 0, alpha: 0 },
+						})
+						.webp({ quality: 100 })
+						.toBuffer();
+					this.sock.sendMessage(this.messages.key.remoteJid, { sticker: stickerBuffer });
+				}
 			}
-		)
+
+		}; Img();
+
+
+		/*const Vid: any = async () => {
+			if (Type === 'videoMessage') {
+				const caption = this.messages.message.videoMessage.caption;
+				if (caption.toLowerCase() === '#sticker') {
+					const buffer = await downloadMediaMessage(
+						this.messages,
+						'buffer',
+						{},
+						{
+							logger,
+							// pass this so that baileys can request a reupload of media
+							// that has been deleted
+							reuploadRequest: this.sock.updateMediaMessage
+						}
+					)
+					const stickerBuffer = await sharp(buffer)
+						.resize(512, 512, {
+							fit: 'contain',
+							background: { r: 0, g: 0, b: 0, alpha: 0 },
+						})
+						.gif()
+						.toBuffer();
+					this.sock.sendMessage(this.messages.key.remoteJid, { sticker: stickerBuffer, isAnimated: true });
+				}
+
+			}
+
+		}; Vid();*/
+
+
+
+
 
 	}
+
+
+
+
 
 
 } export default Sock;

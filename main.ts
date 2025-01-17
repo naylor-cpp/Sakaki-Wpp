@@ -4,4 +4,4 @@ async function main() {
     const client = new Sock();
     client.Main();
 
-}
+} main();
